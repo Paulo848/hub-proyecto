@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hub del Proyecto</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111827'/%3E%3Cpath d='M8 9h16v4H8zM8 15h16v4H8zM8 21h10v4H8z' fill='white'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>Hub del Proyecto</h1>
+
+    <section id="auth">
+      <h2>Ingreso</h2>
+      <input id="email" type="email" placeholder="correo @unal.edu.co" />
+      <input id="password" type="password" placeholder="contraseña" />
+      <button id="signupBtn">Crear cuenta</button>
+      <button id="loginBtn">Entrar</button>
+      <button id="logoutBtn">Salir</button>
+      <p id="userInfo"></p>
+    </section>
+
+    <section id="workspace-form">
+      <h2>Crear workspace</h2>
+      <input id="workspaceName" placeholder="Ej: Clase - Diagrama de procesos" />
+      <textarea id="workspaceDescription" placeholder="Descripción corta"></textarea>
+      <button id="createWorkspaceBtn">Crear</button>
+    </section>
+
+    <section>
+      <h2>Workspaces</h2>
+      <div id="workspaces"></div>
+    </section>
+
+    <section id="workspace-detail" hidden>
+      <h2 id="currentWorkspaceTitle"></h2>
+
+      <h3>Agregar enlace</h3>
+      <input id="linkTitle" placeholder="Nombre del enlace" />
+      <input id="linkUrl" placeholder="URL de Drive, Docs, Draw.io, etc." />
+      <button id="addLinkBtn">Agregar enlace</button>
+
+      <h3>Enlaces</h3>
+      <div id="links"></div>
+
+      <h3>Notas</h3>
+      <textarea id="noteContent" placeholder="Nota rápida"></textarea>
+      <button id="addNoteBtn">Agregar nota</button>
+      <div id="notes"></div>
+
+      <h3>Mensajes</h3>
+      <input id="messageContent" placeholder="Mensaje rápido" />
+      <button id="addMessageBtn">Enviar</button>
+      <div id="messages"></div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -466,6 +466,47 @@ a {
   font-size: 12px;
 }
 
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.live-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.live-status.online {
+  border-color: rgba(52, 211, 153, 0.32);
+  color: #a7f3d0;
+}
+
+.live-status.online::before {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.12);
+}
+
+.live-status.connecting {
+  border-color: rgba(251, 191, 36, 0.32);
+  color: #fde68a;
+}
+
+.live-status.connecting::before {
+  background: var(--warn);
+}
+
 .status-pill.ok {
   border-color: rgba(52, 211, 153, 0.32);
   color: #a7f3d0;

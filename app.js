@@ -41,7 +41,10 @@ const state = {
   loading: true,
   error: "",
   modal: null,
-  subscriptions: [],
+  realtimeStatus: "offline",
+  globalChannel: null,
+  workspaceChannel: null,
+  workspaceChannelId: null,
 };
 
 const escapeHtml = (value = "") =>
@@ -114,6 +117,7 @@ async function applyRoute() {
   clearError();
   await refreshSession();
   await renderRouteData();
+  syncRealtimeSubscriptions();
   render();
 }
 
@@ -245,6 +249,44 @@ async function loadWorkspace(id) {
   state.messages = messagesResult.data || [];
 }
 
+async function loadLinks(workspaceId = state.workspace?.id) {
+  if (!workspaceId) return;
+  const { data, error } = await supabase
+    .from("workspace_links")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  state.links = data || [];
+}
+
+async function loadNotes(workspaceId = state.workspace?.id) {
+  if (!workspaceId) return;
+  const { data, error } = await supabase
+    .from("workspace_notes")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  state.notes = data || [];
+}
+
+async function loadMessages(workspaceId = state.workspace?.id) {
+  if (!workspaceId) return;
+  const { data, error } = await supabase
+    .from("workspace_messages")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  state.messages = data || [];
+}
+
 async function loadActivity(workspaceId = null) {
   let query = supabase
     .from("activity_log")
@@ -257,6 +299,82 @@ async function loadActivity(workspaceId = null) {
   const { data, error } = await query;
   if (error) throw error;
   state.activity = data || [];
+}
+
+async function refreshMembersAndAliases() {
+  await refreshSession();
+  if (state.route === "profile" || state.route === "home" || state.route === "members" || state.route === "workspace") {
+    render();
+  }
+}
+
+async function refreshWorkspaces(payload = null) {
+  if (!state.user || !state.me || !hasProfile(state.me)) return;
+  await loadWorkspaces();
+
+  if (state.route === "workspace" && state.routeId) {
+    if (payload?.new?.id === state.routeId || payload?.old?.id === state.routeId) {
+      await refreshWorkspaceHeader(state.routeId);
+      return;
+    }
+
+    const stillExists = state.workspaces.some((workspace) => workspace.id === state.routeId);
+    if (!stillExists) {
+      routeTo("home");
+      return;
+    }
+  }
+
+  render();
+}
+
+async function refreshWorkspaceHeader(workspaceId = state.workspace?.id) {
+  if (!workspaceId) return;
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select("*")
+    .eq("id", workspaceId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) throw error;
+  state.workspace = data;
+
+  if (!data) {
+    routeTo("home");
+    return;
+  }
+
+  render();
+}
+
+async function refreshCurrentWorkspacePart(part) {
+  if (state.route !== "workspace" || !state.workspace?.id) return;
+
+  const list = document.getElementById("messageList");
+  const shouldStickToBottom = list
+    ? list.scrollHeight - list.scrollTop - list.clientHeight < 80
+    : true;
+
+  if (part === "links") await loadLinks();
+  if (part === "notes") await loadNotes();
+  if (part === "messages") await loadMessages();
+  if (part === "header") await refreshWorkspaceHeader();
+
+  render();
+
+  if (part === "messages" && shouldStickToBottom) {
+    requestAnimationFrame(() => {
+      const nextList = document.getElementById("messageList");
+      if (nextList) nextList.scrollTop = nextList.scrollHeight;
+    });
+  }
+}
+
+async function refreshCurrentHistory() {
+  if (state.route !== "history") return;
+  await loadActivity(state.routeId || null);
+  render();
 }
 
 function render() {
@@ -349,6 +467,7 @@ function renderTopbar() {
         <button class="btn ghost small" data-route="home">Home</button>
         <button class="btn ghost small" data-route="history">Historial</button>
         ${isAdmin() ? `<button class="btn ghost small" data-route="members">Miembros</button>` : ""}
+        <span id="liveStatus" class="live-status ${state.realtimeStatus}">${state.realtimeStatus === "online" ? "En vivo" : state.realtimeStatus === "connecting" ? "Conectando" : "Sin vivo"}</span>
         <button class="profile-chip" data-route="profile">
           ${avatarHtml(state.me.email, "large")}
           <span>${escapeHtml(state.me.display_name || state.me.email)}</span>
@@ -1260,16 +1379,110 @@ function detectLinkType(urlValue) {
   return "Otro";
 }
 
-function subscribeRealtime() {
-  state.subscriptions.forEach((subscription) => supabase.removeChannel(subscription));
-  const channel = supabase
-    .channel("hub-live")
-    .on("postgres_changes", { event: "*", schema: "public" }, async () => {
-      await applyRoute();
-    })
-    .subscribe();
+function setRealtimeStatus(status) {
+  state.realtimeStatus = status;
+  const indicator = document.getElementById("liveStatus");
+  if (indicator) {
+    indicator.className = `live-status ${status}`;
+    indicator.textContent = status === "online" ? "En vivo" : status === "connecting" ? "Conectando" : "Sin vivo";
+  }
+}
 
-  state.subscriptions = [channel];
+function syncRealtimeSubscriptions() {
+  if (!state.user || !state.me) {
+    unsubscribeGlobalRealtime();
+    unsubscribeWorkspaceRealtime();
+    setRealtimeStatus("offline");
+    return;
+  }
+
+  subscribeGlobalRealtime();
+
+  if (state.route === "workspace" && state.workspace?.id) {
+    subscribeWorkspaceRealtime(state.workspace.id);
+    return;
+  }
+
+  unsubscribeWorkspaceRealtime();
+}
+
+function subscribeGlobalRealtime() {
+  if (state.globalChannel) return;
+
+  setRealtimeStatus("connecting");
+
+  state.globalChannel = supabase
+    .channel("hub-global")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "hub_members" },
+      () => refreshMembersAndAliases().catch((error) => notifyError(error.message))
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "workspaces" },
+      (payload) => refreshWorkspaces(payload).catch((error) => notifyError(error.message))
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "activity_log" },
+      () => refreshCurrentHistory().catch((error) => notifyError(error.message))
+    )
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") setRealtimeStatus("online");
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        setRealtimeStatus("offline");
+      }
+    });
+}
+
+function subscribeWorkspaceRealtime(workspaceId) {
+  if (state.workspaceChannel && state.workspaceChannelId === workspaceId) return;
+
+  unsubscribeWorkspaceRealtime();
+  state.workspaceChannelId = workspaceId;
+
+  state.workspaceChannel = supabase
+    .channel(`workspace-live-${workspaceId}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "workspace_messages", filter: `workspace_id=eq.${workspaceId}` },
+      () => refreshCurrentWorkspacePart("messages").catch((error) => notifyError(error.message))
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "workspace_links", filter: `workspace_id=eq.${workspaceId}` },
+      () => refreshCurrentWorkspacePart("links").catch((error) => notifyError(error.message))
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "workspace_notes", filter: `workspace_id=eq.${workspaceId}` },
+      () => refreshCurrentWorkspacePart("notes").catch((error) => notifyError(error.message))
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "activity_log", filter: `workspace_id=eq.${workspaceId}` },
+      () => refreshCurrentHistory().catch((error) => notifyError(error.message))
+    )
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") setRealtimeStatus("online");
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        setRealtimeStatus(state.globalChannel ? "connecting" : "offline");
+      }
+    });
+}
+
+function unsubscribeGlobalRealtime() {
+  if (!state.globalChannel) return;
+  supabase.removeChannel(state.globalChannel);
+  state.globalChannel = null;
+}
+
+function unsubscribeWorkspaceRealtime() {
+  if (!state.workspaceChannel) return;
+  supabase.removeChannel(state.workspaceChannel);
+  state.workspaceChannel = null;
+  state.workspaceChannelId = null;
 }
 
 window.addEventListener("hashchange", applyRoute);
@@ -1277,7 +1490,6 @@ supabase.auth.onAuthStateChange(() => {
   applyRoute();
 });
 
-subscribeRealtime();
 applyRoute().catch((error) => {
   state.loading = false;
   notifyError(error.message);

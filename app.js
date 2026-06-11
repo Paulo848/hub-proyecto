@@ -688,7 +688,7 @@ function renderWorkspacePage() {
           </div>
           <div class="panel-body">
             <form id="messageForm" class="inline-form">
-              <textarea class="textarea" name="content" placeholder="Escribe un mensaje" required></textarea>
+              <textarea class="textarea" name="content" placeholder="Escribe un mensaje" data-message-input required></textarea>
               <button class="btn primary" type="submit">Enviar</button>
             </form>
           </div>
@@ -995,6 +995,7 @@ function bindEvents() {
   document.getElementById("authForm")?.addEventListener("submit", handleAuth);
   document.getElementById("profileForm")?.addEventListener("submit", handleProfile);
   document.getElementById("messageForm")?.addEventListener("submit", handleCreateMessage);
+  document.querySelector("[data-message-input]")?.addEventListener("keydown", handleMessageInputKeydown);
   document.getElementById("workspaceForm")?.addEventListener("submit", handleWorkspaceForm);
   document.getElementById("linkForm")?.addEventListener("submit", handleLinkForm);
   document.getElementById("noteForm")?.addEventListener("submit", handleNoteForm);
@@ -1245,6 +1246,15 @@ async function handleCreateMessage(event) {
 
   form.reset();
   await applyRoute();
+}
+
+function handleMessageInputKeydown(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+    return;
+  }
+
+  event.preventDefault();
+  event.currentTarget.form?.requestSubmit();
 }
 
 async function handleEditMessageForm(event) {
